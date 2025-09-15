@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>얼굴 닮은 정도 분석기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            flex-direction: column;
+        }
+        #container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            min-height: 600px;
+            background-color: #161b22;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        #photo-container {
+            width: 100%;
+            height: 45vh;
+            max-height: 70%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem;
+            gap: 1rem;
+        }
+        .video-stream, .captured-photo {
+            flex-grow: 1;
+            height: 100%;
+            border: 2px solid #333;
+            border-radius: 12px;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror the video */
+        }
+        #countdown-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 8rem;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 10px #e8a05c, 0 0 20px #e8a05c;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        #countdown-number {
+            animation: pulse-countdown 1s ease-in-out infinite;
+        }
+        #result-display {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        #result-text {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+            color: #fff;
+            text-align: center;
+        }
+        #result-percentage {
+            font-size: 6rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #e8a05c, #ffeb3b, #ff7043);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: bounce-in 1s ease-out;
+        }
+        #loading-indicator {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #e8a05c;
+            font-size: 1.5rem;
+        }
+        .btn {
+            background-image: linear-gradient(to right, #e8a05c 0%, #ff7043  51%, #e8a05c  100%);
+            margin: 10px;
+            padding: 15px 45px;
+            text-align: center;
+            text-transform: uppercase;
+            transition: 0.5s;
+            background-size: 200% auto;
+            color: white;
+            box-shadow: 0 0 20px #e8a05c;
+            border-radius: 10px;
+            display: block;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+        }
+        .btn:hover {
+            background-position: right center;
+            color: #fff;
+            text-decoration: none;
+        }
+        .message-box {
+            position: absolute;
+            bottom: 2rem;
+            background-color: rgba(220, 38, 38, 0.8);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            transform: translateY(20px);
+        }
+        .message-box.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        @keyframes pulse-countdown {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        @keyframes bounce-in {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.2); opacity: 1; }
+            70% { transform: scale(0.9); }
+            100% { transform: scale(1); }
+        }
+        @keyframes flash-bg {
+            0%, 100% { background-color: rgba(255, 255, 255, 0); }
+            50% { background-color: rgba(255, 255, 255, 0.8); }
+        }
+        .flash-effect {
+            animation: flash-bg 0.5s ease-out;
+        }
+        #developer-info {
+            margin-top: 1rem;
+            font-size: 0.8rem;
+            text-align: center;
+            color: #6a737d;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.js"></script>
+</head>
+<body>
+    <div id="container">
+        <h1 class="text-3xl font-bold mb-4 text-center">얼굴 닮은 정도 분석기</h1>
+        <p class="text-center text-sm mb-4 text-gray-400" id="status-text">카메라를 켜고 첫 번째 얼굴을 촬영하세요.</p>
+        <div id="photo-container">
+            <!-- Hidden video element to hold the live stream -->
+            <video id="hidden-video" style="display: none;" autoplay muted playsinline></video>
+            <canvas id="canvas-1" class="video-stream"></canvas>
+            <canvas id="canvas-2" class="video-stream"></canvas>
+        </div>
+        <div id="countdown-overlay">
+            <span id="countdown-number">5</span>
+        </div>
+        <div id="result-display">
+            <span id="result-text">두 분은</span>
+            <span id="result-percentage">0%</span>
+            <span id="result-text">닮았습니다.</span>
+        </div>
+        <div id="loading-indicator">모델 로딩 중...</div>
+        <div class="mt-8 flex justify-center space-x-4">
+            <button id="capture-button" class="btn">첫 번째 얼굴 촬영하기</button>
+            <button id="restart-button" class="btn" style="display: none;">다시 측정하기</button>
+        </div>
+        <div id="message-box" class="message-box"></div>
+        <div id="developer-info">
+            개발자: 가치있는미래교육 연구소 대표 김병찬
+        </div>
+    </div>
+
+    <script>
+        const canvas1 = document.getElementById('canvas-1');
+        const canvas2 = document.getElementById('canvas-2');
+        const hiddenVideo = document.getElementById('hidden-video');
+        const countdownOverlay = document.getElementById('countdown-overlay');
+        const countdownNumber = document.getElementById('countdown-number');
+        const resultDisplay = document.getElementById('result-display');
+        const resultPercentage = document.getElementById('result-percentage');
+        const captureButton = document.getElementById('capture-button');
+        const restartButton = document.getElementById('restart-button');
+        const statusText = document.getElementById('status-text');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const messageBox = document.getElementById('message-box');
+
+        let isInitialized = false;
+        let audioContext;
+        let countdownInterval;
+        let firstFaceDescriptor = null;
+        let animationFrameId;
+        let isCanvas1Frozen = false;
+        let isCanvas2Frozen = false;
+        let appState = 'initializing'; // initializing, capturing_1, capturing_2, analyzing, result_shown
+
+        // Function to show a temporary message box
+        const showMessage = (text, duration = 3000) => {
+            messageBox.textContent = text;
+            messageBox.classList.add('show');
+            setTimeout(() => {
+                messageBox.classList.remove('show');
+            }, duration);
+        };
+
+        // Function to generate a simple beep sound using Web Audio API
+        const playBeep = (frequency, duration) => {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.type = 'sine';
+            oscillator.frequency.value = frequency;
+
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.01);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration / 1000);
+        };
+
+        // Load the face-api.js models
+        async function loadModels() {
+            try {
+                loadingIndicator.style.display = 'block';
+                const modelPath = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights/';
+                await faceapi.nets.tinyFaceDetector.loadFromUri(modelPath);
+                await faceapi.nets.faceLandmark68Net.loadFromUri(modelPath);
+                await faceapi.nets.faceRecognitionNet.loadFromUri(modelPath);
+                isInitialized = true;
+                loadingIndicator.style.display = 'none';
+                appState = 'capturing_1';
+                updateUI();
+                startCamera();
+            } catch (error) {
+                console.error('Error loading models:', error);
+                loadingIndicator.textContent = '모델 로딩 실패. 새로고침 해주세요.';
+                captureButton.disabled = true;
+            }
+        }
+
+        // Start the user's camera and draw to canvases
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                hiddenVideo.srcObject = stream;
+                hiddenVideo.play();
+                hiddenVideo.onloadedmetadata = () => {
+                    canvas1.width = hiddenVideo.videoWidth;
+                    canvas1.height = hiddenVideo.videoHeight;
+                    canvas2.width = hiddenVideo.videoWidth;
+                    canvas2.height = hiddenVideo.videoHeight;
+                    drawCanvases();
+                };
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                statusText.textContent = '카메라 접근이 거부되었습니다. 다시 시도해 주세요.';
+                captureButton.disabled = true;
+            }
+        }
+        
+        // Continuous drawing loop for both canvases
+        function drawCanvases() {
+            const context1 = canvas1.getContext('2d');
+            const context2 = canvas2.getContext('2d');
+
+            const drawFrame = () => {
+                if (!isCanvas1Frozen) {
+                    context1.drawImage(hiddenVideo, 0, 0, canvas1.width, canvas1.height);
+                }
+                if (!isCanvas2Frozen) {
+                    context2.drawImage(hiddenVideo, 0, 0, canvas2.width, canvas2.height);
+                }
+                animationFrameId = requestAnimationFrame(drawFrame);
+            };
+            drawFrame();
+        }
+
+        // Start the countdown
+        function startCountdown(onComplete) {
+            let count = 5;
+            countdownNumber.textContent = count;
+            countdownOverlay.style.display = 'flex';
+            resultDisplay.style.display = 'none';
+            resultDisplay.style.opacity = 0;
+            countdownOverlay.style.opacity = 1;
+            
+            playBeep(440, 50);
+            
+            countdownInterval = setInterval(() => {
+                count--;
+                countdownNumber.textContent = count;
+                playBeep(440 + (5 - count) * 50, 50);
+
+                if (count <= 0) {
+                    clearInterval(countdownInterval);
+                    countdownOverlay.style.opacity = 0;
+                    document.body.classList.add('flash-effect');
+                    setTimeout(() => document.body.classList.remove('flash-effect'), 500);
+                    onComplete();
+                }
+            }, 1000);
+        }
+
+        // Take a "snapshot" of the canvas and detect face
+        async function captureFace(canvasElement) {
+            try {
+                // Ensure the canvas is up-to-date before detection
+                const context = canvasElement.getContext('2d');
+                context.drawImage(hiddenVideo, 0, 0, canvasElement.width, canvasElement.height);
+
+                const detections = await faceapi.detectSingleFace(canvasElement, new faceapi.TinyFaceDetectorOptions())
+                                                .withFaceLandmarks()
+                                                .withFaceDescriptor();
+
+                if (!detections) {
+                    showMessage('얼굴을 인식할 수 없습니다. 다시 시도해 주세요.');
+                    return null;
+                }
+                
+                return detections.descriptor;
+
+            } catch (error) {
+                console.error('Error during capture:', error);
+                showMessage('얼굴 인식 중 오류가 발생했습니다. 다시 시도해 주세요.');
+                return null;
+            }
+        }
+
+        // Handle the main capture logic
+        async function handleCapture() {
+            if (!isInitialized) {
+                showMessage('모델이 아직 로딩 중입니다. 잠시만 기다려주세요.');
+                return;
+            }
+
+            if (appState === 'capturing_1') {
+                isCanvas1Frozen = true;
+                
+                firstFaceDescriptor = await captureFace(canvas1);
+                
+                if (firstFaceDescriptor) {
+                    appState = 'capturing_2';
+                } else {
+                    resetApp();
+                }
+            } else if (appState === 'capturing_2') {
+                isCanvas2Frozen = true;
+                
+                const secondFaceDescriptor = await captureFace(canvas2);
+                
+                if (secondFaceDescriptor) {
+                    appState = 'analyzing';
+                    updateUI(); // Update UI to show analyzing status
+                    startCountdown(() => {
+                        analyzeFaces(firstFaceDescriptor, secondFaceDescriptor);
+                    });
+                } else {
+                    resetApp();
+                }
+            }
+            updateUI();
+        }
+
+        // Analyze faces
+        async function analyzeFaces(descriptor1, descriptor2) {
+            try {
+                const distance = faceapi.euclideanDistance(descriptor1, descriptor2);
+                
+                // New logic for more accurate similarity calculation
+                const perfectMatchThreshold = 0.25; 
+                const maxDistance = 0.6; 
+                let percentage;
+                
+                if (distance <= perfectMatchThreshold) {
+                    percentage = 100;
+                } else if (distance > perfectMatchThreshold && distance <= maxDistance) {
+                    const similarity = 1 - ((distance - perfectMatchThreshold) / (maxDistance - perfectMatchThreshold));
+                    percentage = Math.round(similarity * 100);
+                } else {
+                    percentage = 0;
+                }
+                
+                showResult(percentage);
+            } catch (error) {
+                console.error('Error analyzing faces:', error);
+                showMessage('얼굴 분석 중 오류가 발생했습니다. 다시 시도해 주세요.');
+                resetApp();
+            }
+        }
+
+        // Display the final result with animations
+        function showResult(percentage) {
+            countdownOverlay.style.display = 'none';
+            resultDisplay.style.display = 'flex';
+            resultPercentage.textContent = `${percentage}%`;
+            resultDisplay.style.opacity = 1;
+
+            playBeep(880, 200);
+
+            appState = 'result_shown';
+            updateUI();
+        }
+
+        // Reset the app to its initial state
+        function resetApp() {
+            countdownOverlay.style.display = 'none';
+            resultDisplay.style.display = 'none';
+            
+            isCanvas1Frozen = false;
+            isCanvas2Frozen = false;
+            
+            appState = 'capturing_1';
+            firstFaceDescriptor = null;
+            updateUI();
+        }
+
+        // Central function to manage UI state based on appState
+        function updateUI() {
+            captureButton.style.display = 'none';
+            restartButton.style.display = 'none';
+            captureButton.disabled = false;
+
+            switch (appState) {
+                case 'initializing':
+                    statusText.textContent = '모델 로딩 중입니다...';
+                    captureButton.disabled = true;
+                    break;
+                case 'capturing_1':
+                    captureButton.textContent = '첫 번째 얼굴 촬영하기';
+                    statusText.textContent = '카메라가 준비되었습니다. 첫 번째 얼굴을 촬영하세요.';
+                    captureButton.style.display = 'block';
+                    break;
+                case 'capturing_2':
+                    captureButton.textContent = '두 번째 얼굴 촬영하기';
+                    statusText.textContent = '첫 번째 얼굴이 촬영되었습니다. 이제 두 번째 얼굴을 촬영하세요.';
+                    captureButton.style.display = 'block';
+                    break;
+                case 'analyzing':
+                    statusText.textContent = '두 얼굴이 모두 촬영되었습니다. 결과를 분석 중입니다.';
+                    break;
+                case 'result_shown':
+                    statusText.textContent = '다시 측정하고 싶으시면 버튼을 눌러주세요.';
+                    restartButton.style.display = 'block';
+                    break;
+            }
+        }
+
+        // Event listener for the capture button
+        captureButton.addEventListener('click', handleCapture);
+        // Event listener for the new restart button
+        restartButton.addEventListener('click', resetApp);
+
+        // Initialize the app by loading models
+        window.onload = loadModels;
+    </script>
+</body>
+</html>
